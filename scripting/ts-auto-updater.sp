@@ -3,30 +3,37 @@
 #pragma newdecls required
 
 static Dynamic s_AutoExecConfig = view_as<Dynamic>(INVALID_DYNAMIC_OBJECT);
-static int s_SetsteamaccountOffset = INVALID_DYNAMIC_OFFSET;
+static File s_LogFile = null;
 
 public Plugin myinfo =
 {
 	name = "Token Stash Auto Updater",
 	author = "Neuro Toxin",
 	description = "Updates a servers GSLT token using Token Stash",
-	version = "0.0.2",
-	url = "https://csgo.tokenstash.com/"
+	version = "0.0.3",
+	url = "http://tokenstash.com/"
 }
 
 public void OnPluginStart()
 {
-	TS_LogMessage("*****************************************");
-	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.02 ***");
-	TS_LogMessage("*****************************************");
+	OpenLog();
 	
-	// Load sv_setsteamaccount from autoexec.cfg
-	LoadGameServerLoginToken();
+	TS_LogMessage("******************************************************************");
+	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.03");
+	TS_LogMessage("******************************************************************");
 	
-	// Begin creating a new token
-	BeginValidateGameServerLoginToken();
+	bool restart = false;
+	if (LoadGameServerLoginToken())
+		restart = ValidateGameServerLoginToken();
 	
-	TS_LogMessage("*****************************************");
+	TS_LogMessage("******************************************************************");
+	CloseLog();
+	
+	if (restart)
+	{
+		PrintToServer("Server restarting!");
+		ServerCommand("crash");
+	}
 }
 
 public void OnPluginEnd()
@@ -34,7 +41,7 @@ public void OnPluginEnd()
 	s_AutoExecConfig.Dispose();
 }
 
-stock void LoadGameServerLoginToken()
+stock bool LoadGameServerLoginToken()
 {
 	TS_LogMessage("*** LoadGameServerLoginToken...");
 
@@ -43,28 +50,30 @@ stock void LoadGameServerLoginToken()
 		s_AutoExecConfig.Dispose();
 		
 	// Global dynamic object to store `autoexec.cfg`
-	s_AutoExecConfig = Dynamic(256);
+	s_AutoExecConfig = Dynamic();
 	
 	// Attemp to load `autoexec.cfg` and exit on failure
-	if (!s_AutoExecConfig.ReadConfig("cfg/autoexec.cfg", false, 256))
+	if (!s_AutoExecConfig.ReadConfig("cfg/autoexec.cfg", false, 512))
 	{
-		// Create offset and exit as failed
-		s_SetsteamaccountOffset = s_AutoExecConfig.SetString("sv_setsteamaccount", "", 256);
-		return;
+		TS_LogMessage("*** Unable to read 'cfg/autoexec.cfg'!");
+		s_AutoExecConfig.Dispose();
+		s_AutoExecConfig = INVALID_DYNAMIC_OBJECT;
+		return false;
 	}
 	
 	// Get `sv_setsteamaccount` offset
-	s_SetsteamaccountOffset = s_AutoExecConfig.GetMemberOffset("sv_setsteamaccount");
+	int offset = s_AutoExecConfig.GetMemberOffset("sv_setsteamaccount");
 	
 	// Check if `sv_setsteamaccount` offset is valid
-	if (s_SetsteamaccountOffset == INVALID_DYNAMIC_OFFSET)
+	if (offset == INVALID_DYNAMIC_OFFSET)
 	{
 		// Create offset and exit as failed
-		s_SetsteamaccountOffset = s_AutoExecConfig.SetString("sv_setsteamaccount", "", 256);
+		s_AutoExecConfig.SetString("sv_setsteamaccount", "", 256);
 	}
+	return true;
 }
 
-stock void BeginValidateGameServerLoginToken()
+stock bool ValidateGameServerLoginToken()
 {
 	TS_LogMessage("*** BeginValidateGameServerLoginToken...");
 	
@@ -74,14 +83,9 @@ stock void BeginValidateGameServerLoginToken()
 	if (db == null)
 	{
 		LogError("MySQL Error: %s", error);
-		return;
+		return false;
 	}
 	
-	TS_OnDatabaseConnected(db);
-}
-
-stock void TS_OnDatabaseConnected(Handle db)
-{
 	char serverip[32]; int serverport;
 	GetServerIpAddress(serverip, sizeof(serverip));
 	serverport = GetServerPort();
@@ -90,71 +94,64 @@ stock void TS_OnDatabaseConnected(Handle db)
 	s_AutoExecConfig.GetString("tokenstash_steamid", steamid, sizeof(steamid));
 	s_AutoExecConfig.GetString("tokenstash_apikey", apikey, sizeof(apikey));
 	
+	TS_LogMessage("*** -> tokenstash_steamid: '%s'", steamid);
+	TS_LogMessage("*** -> tokenstash_apikey: '%s'", apikey);
+	
 	char query[1024];
 	Format(query, sizeof(query), "SELECT GSLT_GETSERVERTOKEN(%s, '%s', '%s:%d');", steamid, apikey, serverip, serverport);
 	
 	DBResultSet results = SQL_Query(db, query);
-	TS_OnDatabaseEndQuery(db, results);
-}
-
-stock void TS_OnDatabaseEndQuery(Handle db, DBResultSet results)
-{
 	if (results == null)
 	{
 		char db_err[1024];
 		SQL_GetError(db, db_err, sizeof(db_err));
 		LogError("MySQL Error: %s", db_err);
 		delete db;
-		return;
+		return false;
 	}
 	
 	if (results.FetchRow())
 	{
 		char token[128];
 		results.FetchString(0, token, sizeof(token));
-		ValidateToken(token);
+		delete db;
+		return ValidateToken(token);
 	}
 	
 	delete db;
+	return false;
 }
 
-stock void ValidateToken(const char[] token)
+stock bool ValidateToken(const char[] token)
 {
 	if (StrEqual(token, "INVALID_AUTH"))
 	{
-		TS_LogMessage("*** Unable to retrieve token. API MSG: 'INVALID_AUTH'");
-		return;
+		TS_LogMessage("*** Unable to retrieve token.");
+		TS_LogMessage("*** -> API MSG: 'INVALID_AUTH'");
+		return false;
 	}
 	
 	if (StrEqual(token, "NO_TOKEN"))
 	{
-		TS_LogMessage("*** Unable to retrieve token. API MSG: 'NO_TOKEN'");
-		return;
+		TS_LogMessage("*** Unable to retrieve token.");
+		TS_LogMessage("*** -> API MSG: 'NO_TOKEN'");
+		return false;
 	}	
 	
 	char configtoken[128];
-	s_AutoExecConfig.GetStringByOffset(s_SetsteamaccountOffset, configtoken, sizeof(configtoken));
+	s_AutoExecConfig.GetString("sv_setsteamaccount", configtoken, sizeof(configtoken));
+	TS_LogMessage("*** -> sv_setsteamaccount: '%s'", configtoken);
 	
 	if (StrEqual(token, configtoken))
 	{
-		TS_LogMessage("*** CURRENT TOKEN IS VALID!!!");
-		return;
+		TS_LogMessage("*** CURRENT TOKEN IS VALID");
+		return false;
 	}
-		
-	s_AutoExecConfig.SetStringByOffset(s_SetsteamaccountOffset, token);
+	
+	s_AutoExecConfig.SetString("sv_setsteamaccount", token);
 	s_AutoExecConfig.WriteConfig("cfg/autoexec.cfg");
-	TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'!!!", token);
-	
-	ServerCommand("sm_msay -=[ Server is restarting... ]=-");
-	PrintToChatAll("\x01\x07CSGO.TOKENSTASH.COM: Server restarting after GSLT token update...");
-	
-	TS_LogMessage("*** Restarting server in 10 seconds");
-	CreateTimer(10.0, OnRestartServerRequired);
-}
-
-public Action OnRestartServerRequired(Handle timer, any data)
-{
-	ServerCommand("quit");
+	TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'", token);
+	return true;
 }
 
 stock void GetServerIpAddress(char[] buffer, int length)
@@ -168,7 +165,7 @@ stock void GetServerIpAddress(char[] buffer, int length)
 	pieces[1] = (longip >> 16) & 0x000000FF;
 	pieces[2] = (longip >> 8) & 0x000000FF;
 	pieces[3] = longip & 0x000000FF;
-
+	
 	Format(buffer, length, "%d.%d.%d.%d", pieces[0], pieces[1], pieces[2], pieces[3]);
 }
 
@@ -186,5 +183,20 @@ stock void TS_LogMessage(const char[] message, any ...)
 	VFormat(buffer, sizeof(buffer), message, 2);
 	
 	PrintToServer(buffer);
-	//LogMessage(buffer);
+	AppendToLog(buffer);
+}
+
+stock void OpenLog()
+{
+	s_LogFile = OpenFile("addons/sourcemod/logs/tokenstash.txt", "w");
+}
+
+stock void AppendToLog(const char[] message)
+{
+	s_LogFile.WriteLine(message);
+}
+
+stock void CloseLog()
+{
+	s_LogFile.Close();
 }
