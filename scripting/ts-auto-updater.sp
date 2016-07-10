@@ -4,18 +4,38 @@
 
 static Dynamic s_AutoExecConfig = view_as<Dynamic>(INVALID_DYNAMIC_OBJECT);
 static File s_LogFile = null;
+static bool s_DynamicLoaded = false;
 
 public Plugin myinfo =
 {
 	name = "Token Stash Auto Updater",
 	author = "Neuro Toxin",
 	description = "Updates a servers GSLT token using Token Stash",
-	version = "0.0.3",
+	version = "0.0.4",
 	url = "http://tokenstash.com/"
 }
 
-public void OnPluginStart()
+public void OnLibraryRemoved(const char[] name)
 {
+	if (StrEqual(name, "dynamic"))
+	{
+		s_DynamicLoaded = false;
+	}
+}
+ 
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, "dynamic"))
+	{
+		s_DynamicLoaded = true;
+	}
+}
+
+public void OnAllPluginsLoaded()
+{
+	if (!s_DynamicLoaded)
+		SetFailState("Plugin dependancy `dynamic.smx` not found!");
+	
 	OpenLog();
 	
 	TS_LogMessage("******************************************************************");
