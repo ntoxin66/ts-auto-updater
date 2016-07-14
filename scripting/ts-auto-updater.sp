@@ -11,7 +11,7 @@ public Plugin myinfo =
 	name = "Token Stash Auto Updater",
 	author = "Neuro Toxin",
 	description = "Updates a servers GSLT token using Token Stash",
-	version = "0.0.4",
+	version = "0.0.5",
 	url = "http://tokenstash.com/"
 }
 
@@ -39,7 +39,7 @@ public void OnAllPluginsLoaded()
 	OpenLog();
 	
 	TS_LogMessage("******************************************************************");
-	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.03");
+	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.05");
 	TS_LogMessage("******************************************************************");
 	
 	bool restart = false;
@@ -102,7 +102,7 @@ stock bool ValidateGameServerLoginToken()
 	
 	if (db == null)
 	{
-		LogError("MySQL Error: %s", error);
+		TS_LogMessage("*** -> MySQL Error: %s", error);
 		return false;
 	}
 	
