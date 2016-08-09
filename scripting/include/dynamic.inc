@@ -1,7 +1,26 @@
-#if defined _dynamic_included_
+/**
+ * =============================================================================
+ * Dynamic for SourceMod (C)2016 Matthew J Dunn.   All rights reserved.
+ * =============================================================================
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License, version 3.0, as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+#if defined _dynamic_included
   #endinput
 #endif
-#define _dynamic_included_
+#define _dynamic_included
 
 #define INVALID_DYNAMIC_OBJECT			view_as<Dynamic>(-1)
 #define INVALID_DYNAMIC_OFFSET			-1
@@ -26,7 +45,7 @@ typeset DynamicHookCB
 
 native int Dynamic_GetCollectionSize();
 
-native Dynamic Dynamic_Initialise(int blocksize=64, int startsize=0);
+native Dynamic Dynamic_Initialise(int blocksize=64, int startsize = 0, bool persistent = false);
 native bool Dynamic_IsValid(int index, bool throwerror=false);
 native bool Dynamic_Dispose(int index, bool disposemembers);
 
@@ -34,11 +53,14 @@ native bool Dynamic_SetName(Dynamic obj, const char[] objectname, bool replace);
 native Dynamic Dynamic_FindByName(const char[] objectname);
 native Dynamic Dynamic_GetParent(Dynamic obj);
 
-native bool Dynamic_ReadConfig(Dynamic obj, const char[] path, bool use_valve_fs = false, int valuelength);
-native bool Dynamic_WriteConfig(Dynamic obj, const char[] path, bool use_valve_fs = false);
+native bool Dynamic_GetPersistence(Dynamic obj);
+native bool Dynamic_SetPersistence(Dynamic obj, bool value);
 
-native bool Dynamic_ReadKeyValues(Dynamic obj, const char[] path, bool use_valve_fs = false, int valuelength);
-native bool Dynamic_WriteKeyValues(Dynamic obj, const char[] path, bool use_valve_fs = false);
+native bool Dynamic_ReadConfig(Dynamic obj, const char[] path, bool use_valve_fs=false, int valuelength);
+native bool Dynamic_WriteConfig(Dynamic obj, const char[] path, bool use_valve_fs=false);
+
+native bool Dynamic_ReadKeyValues(Dynamic obj, const char[] path, bool use_valve_fs=false, int valuelength);
+native bool Dynamic_WriteKeyValues(Dynamic obj, const char[] path, bool use_valve_fs=false);
 
 native int Dynamic_GetMemberCount(Dynamic obj);
 native int Dynamic_GetMemberOffset(Dynamic obj, const char[] membername);
@@ -107,9 +129,13 @@ native bool Dynamic_GetVectorByIndex(Dynamic obj, int index, float[3] vector);
 
 methodmap Dynamic
 {
-	public Dynamic(int blocksize=64, int startsize=0)
+#if defined dynamic_persistent
+	public Dynamic(int blocksize=64, int startsize=0, bool persistent=true)
+#else
+	public Dynamic(int blocksize=64, int startsize=0, bool persistent=false)
+#endif
 	{
-		return Dynamic_Initialise(blocksize, startsize);
+		return Dynamic_Initialise(blocksize, startsize, persistent);
 	}
 	
 	property int IsValid
@@ -117,6 +143,18 @@ methodmap Dynamic
 		public get()
 		{
 			return Dynamic_IsValid(view_as<int>(this), false);
+		}
+	}
+	
+	property bool Persistent
+	{
+		public get()
+		{
+			return Dynamic_GetPersistence(this);
+		}
+		public set(bool value)
+		{
+			Dynamic_SetPersistence(this, value);
 		}
 	}
 	
@@ -461,6 +499,8 @@ public __pl_dynamic_SetNTVOptional()
 	MarkNativeAsOptional("Dynamic_SetName");
 	MarkNativeAsOptional("Dynamic_FindByName");
 	MarkNativeAsOptional("Dynamic_GetParent");
+	MarkNativeAsOptional("Dynamic_GetPersistence");
+	MarkNativeAsOptional("Dynamic_SetPersistence");
 	MarkNativeAsOptional("Dynamic_ReadConfig");
 	MarkNativeAsOptional("Dynamic_WriteConfig");
 	MarkNativeAsOptional("Dynamic_ReadKeyValues");
@@ -524,6 +564,9 @@ public __pl_dynamic_SetNTVOptional()
 	MarkNativeAsOptional("Dynamic_SortMembers");
 }
 #endif
+
+#include <dynamic-collection>
+#include <dynamic-basic>
 
 public SharedPlugin __pl_dynamic = 
 {
