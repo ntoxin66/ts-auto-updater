@@ -2,25 +2,29 @@
 #include <steamworks>
 
 static File s_LogFile = null;
-static bool s_TimersCreated = false;
+static Dynamic s_Settings = INVALID_DYNAMIC_OBJECT;
 
 public Plugin myinfo =
 {
-	name = "Token Stash Auto Updater",
-	author = "Neuro Toxin",
+	name = "TokenStash Automatic Token Updater",
+	author = "Neuro Toxin - Toxic Gaming",
 	description = "Updates a servers GSLT token using TokenStash API",
-	version = "0.0.8",
+	version = "0.0.9",
 	url = "http://tokenstash.com/"
 }
 
 public void OnAllPluginsLoaded()
 {
-	if (s_TimersCreated)
-		return;
+	s_Settings = Dynamic();
+	LoadSettings(true);
+	
+	if (s_Settings.GetBool("tokenstash_hibernate", false))
+		ServerCommand("sv_hibernate_when_empty 0");
+	else
+		ServerCommand("sv_hibernate_when_empty 1");
 	
 	CreateTimer(0.01, OnValidateTokenRequired);
 	CreateTimer(300.0, OnValidateTokenRequired, _, TIMER_REPEAT);
-	s_TimersCreated = true;
 }
 
 public Action OnValidateTokenRequired(Handle timer)
@@ -31,21 +35,21 @@ public Action OnValidateTokenRequired(Handle timer)
 	{
 		OpenLog();
 		TS_LogMessage("******************************************************************");
-		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.08");
+		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.09");
 		TS_LogMessage("******************************************************************");
 		TS_LogMessage("*** SteamWorks is unable to create HTTP request.");
 		CloseLog();
 		return Plugin_Continue;
 	}
 	
-	char steamid[32]; char apikey[64]; char serverhost[128];
-	GetConfigValues(steamid, sizeof(steamid), apikey, sizeof(apikey), serverhost, sizeof(serverhost));
-	Format(serverhost, sizeof(serverhost), "%s_%s", steamid, serverhost);
+	char steamid[32]; char apikey[64]; char serverkey[64];
+	LoadSettings();
+	GetConfigValues(steamid, sizeof(steamid), apikey, sizeof(apikey), serverkey, sizeof(serverkey));
 	
-	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "version", "0.08");
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "version", "0.09");
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamid", steamid);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "apikey", apikey);
-	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "serverhost", serverhost);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "serverkey", serverkey);
 	SteamWorks_SetHTTPCallbacks(request, OnInfoReceived);
 	SteamWorks_PrioritizeHTTPRequest(request);
 	
@@ -54,16 +58,19 @@ public Action OnValidateTokenRequired(Handle timer)
 		steamid[i] = 'X';
 		apikey[i] = 'X';
 	}
-	for (int i = 5; i < 10; i++)
+	for (int i = 0; i < 10; i++)
 		apikey[i] = 'X';
+	for (int i = 0; i < 10; i++)
+		serverkey[i] = 'X';
 	
 	OpenLog();
+	PrintToServer("*** tokenstash.com: Validating server token via HTTP...");
 	TS_LogMessage("******************************************************************");
-	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.08");
+	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.09");
 	TS_LogMessage("******************************************************************");
 	TS_LogMessage("*** -> tokenstash_steamid:\t'%s'", steamid);
 	TS_LogMessage("*** -> tokenstash_apikey:\t'%s'", apikey);
-	TS_LogMessage("*** -> tokenstash_serverhost:\t'%s'", serverhost);
+	TS_LogMessage("*** -> tokenstash_serverkey:\t'%s'", serverkey);
 	SteamWorks_SendHTTPRequest(request);
 	return Plugin_Continue;
 }
@@ -90,97 +97,106 @@ stock void ValidateToken(char[] token)
 {
 	if (StrEqual(token, "ERROR"))
 	{
+		PrintToServer("*** tokenstash.com: Unable to retrieve token.");
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'ERROR'");
-		return;
 	}
 	
-	if (StrEqual(token, "INVALID_AUTH"))
+	else if (StrEqual(token, "INVALID_AUTH"))
 	{
+		PrintToServer("*** tokenstash.com: Unable to retrieve token.");
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'INVALID_AUTH'");
-		return;
 	}
 	
-	if (StrEqual(token, "NO_TOKEN"))
+	else if (StrEqual(token, "NO_TOKEN"))
 	{
+		PrintToServer("*** tokenstash.com: Unable to retrieve token.");
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'NO_TOKEN'");
-		return;
 	}
 	
-	if (StrContains(token, "TOKEN ") != 0)
+	else if (StrContains(token, "SERVER_TOKEN ") == 0)
+	{
+		char configtoken[128];
+		GetToken(configtoken, sizeof(configtoken));
+		
+		if (StrEqual(token[13], configtoken))
+		{
+			for (int i = 0; i < 10; i++)
+				configtoken[i] = 88;
+			
+			PrintToServer("*** tokenstash.com: Current token is valid.");
+			TS_LogMessage("*** -> tokenstash_token:\t'%s'", configtoken);
+			TS_LogMessage("*** CURRENT GSLT TOKEN IS VALID");
+			return;
+		}
+		
+		WriteToken(token[13]);
+		
+		for (int i = 0; i < 10; i++)
+			token[i] = 88;
+
+		PrintToServer("*** tokenstash.com: Token updated to '%s'.", token[13]);
+		TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'", token[13]);
+		RestartServer();
+	}
+	
+	else if (StrContains(token, "SERVER_KEY ") == 0)
+	{
+		s_Settings.SetString("tokenstash_serverkey", token[11]);
+		SaveSettings();
+		
+		PrintToServer("*** tokenstash.com: Server token key updated to '%s'.", token[11]);
+		TS_LogMessage("*** SERVER KEY UPDATED TO '%s'", token[11]);
+		RestartServer();
+	}
+	
+	else
 	{
 		TS_LogMessage("*** ERROR DETECTED!");
-		return;
 	}
-	
-	char configtoken[128];
-	GetToken(configtoken, sizeof(configtoken));
-	
-	if (StrEqual(token[6], configtoken))
-	{
-		for (int i = 0; i < 10; i++)
-			configtoken[i] = 88;
-			
-		TS_LogMessage("*** -> sv_setsteamaccount:\t'%s'", configtoken);
-		TS_LogMessage("*** CURRENT GSLT TOKEN IS VALID");
-		return;
-	}
-	
-	WriteToken(token[6]);
-	
-	for (int i = 0; i < 10; i++)
-		token[i] = 88;
-
-	TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'", token[6]);
-	RestartServer();
 }
 
-stock bool GetConfigValues(char[] steamid, int steamidlength, char[] apikey, int apikeylength, char[] serverhost, int serverhostlength)
+stock bool LoadSettings(bool settoken=false)
 {
-	Dynamic s_AutoExecConfig = Dynamic();
-	s_AutoExecConfig.ReadConfig("cfg/autoexec.cfg", false, 512);
+	s_Settings.Reset();
+	if (!s_Settings.ReadConfig("cfg\\sourcemod\\tokenstash.cfg"))
+	{
+		LogError("Unable to read config `cfg\\sourcemod\\tokenstash.cfg`");
+		return false;
+	}
 	
-	s_AutoExecConfig.GetString("tokenstash_steamid", steamid, steamidlength);
-	s_AutoExecConfig.GetString("tokenstash_apikey", apikey, apikeylength);
-	
-	GetServerIpAddress(serverhost, serverhostlength);
-	Format(serverhost, serverhostlength, "%s:%d", serverhost, GetServerPort());
-	
-	s_AutoExecConfig.Dispose();
+	if (settoken)
+	{
+		char token[64];
+		GetToken(token, sizeof(token));
+		ServerCommand("sv_setsteamaccount \"%s\"", token);
+	}
+	return true;
+}
+
+stock bool SaveSettings()
+{
+	s_Settings.WriteConfig("cfg\\sourcemod\\tokenstash.cfg");
+}
+
+stock bool GetConfigValues(char[] steamid, int steamidlength, char[] apikey, int apikeylength, char[] serverkey, int serverkeylength)
+{
+	s_Settings.GetString("tokenstash_steamid", steamid, steamidlength);
+	s_Settings.GetString("tokenstash_apikey", apikey, apikeylength);
+	s_Settings.GetString("tokenstash_serverkey", serverkey, serverkeylength);
 }
 
 stock bool GetToken(char[] token, int length)
 {
-	Dynamic s_AutoExecConfig = Dynamic();
-	s_AutoExecConfig.ReadConfig("cfg/autoexec.cfg", false, 512);
-	s_AutoExecConfig.GetString("sv_setsteamaccount", token, length);
-	s_AutoExecConfig.Dispose();
+	return s_Settings.GetString("tokenstash_token", token, length);
 }
 
 stock bool WriteToken(char[] token)
 {
-	Dynamic s_AutoExecConfig = Dynamic();
-	s_AutoExecConfig.ReadConfig("cfg/autoexec.cfg", false, 512);
-	s_AutoExecConfig.SetString("sv_setsteamaccount", token, 128);
-	s_AutoExecConfig.WriteConfig("cfg/autoexec.cfg");
-	s_AutoExecConfig.Dispose();
-}
-
-stock void GetServerIpAddress(char[] buffer, int length)
-{
-	ConVar cvar = FindConVar("ip");
-	cvar.GetString(buffer, length);
-	delete cvar;
-}
-
-stock int GetServerPort()
-{
-	ConVar cvar = FindConVar("hostport");
-	int port = cvar.IntValue;
-	delete cvar;
-	return port;
+	s_Settings.SetString("tokenstash_token", token, 128);
+	SaveSettings();
 }
 
 public void RestartServer()
@@ -197,7 +213,7 @@ public void RestartServer()
 	}
 	
 	PrintToServer("Server restarting!");
-	PrintToChatAll("> \x05Server is graciously restarting.");
+	PrintToChatAll("> \x05Server is restarting.");
 	ServerCommand("quit");
 }
 
@@ -205,8 +221,6 @@ stock void TS_LogMessage(const char[] message, any ...)
 {
 	char buffer[256];
 	VFormat(buffer, sizeof(buffer), message, 2);
-	
-	PrintToServer(buffer);
 	AppendToLog(buffer);
 }
 
