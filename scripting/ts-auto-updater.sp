@@ -3,31 +3,66 @@
 
 static File s_LogFile = null;
 static Dynamic s_Settings = INVALID_DYNAMIC_OBJECT;
+static ConVar s_HibernateWhenEmpty = null;
+static bool s_RenableHibernateWhenEmpty = false;
 
 public Plugin myinfo =
 {
 	name = "TokenStash Automatic Token Updater",
 	author = "Neuro Toxin - Toxic Gaming",
 	description = "Updates a servers GSLT token using TokenStash API",
-	version = "0.0.9",
+	version = "0.0.10",
 	url = "http://tokenstash.com/"
 }
 
 public void OnAllPluginsLoaded()
 {
+	s_HibernateWhenEmpty = FindConVar("sv_hibernate_when_empty");
+	s_HibernateWhenEmpty.AddChangeHook(OnHibernateWhenEmptyChanged);
+	
 	s_Settings = Dynamic();
 	LoadSettings(true);
 	
-	if (s_Settings.GetBool("tokenstash_hibernate", false))
-		ServerCommand("sv_hibernate_when_empty 0");
-	else
-		ServerCommand("sv_hibernate_when_empty 1");
+	s_HibernateWhenEmpty.BoolValue = s_Settings.GetBool("tokenstash_hibernate");
+	if (s_HibernateWhenEmpty.BoolValue)
+	{
+		s_RenableHibernateWhenEmpty = true;
+		s_HibernateWhenEmpty.BoolValue = false;
+	}
 	
-	CreateTimer(0.01, OnValidateTokenRequired);
-	CreateTimer(300.0, OnValidateTokenRequired, _, TIMER_REPEAT);
+	CreateTimer(0.01, OnValidateTokenRequired, false);
+	CreateTimer(300.0, OnValidateTokenRequired, true, TIMER_REPEAT);
 }
 
-public Action OnValidateTokenRequired(Handle timer)
+stock void Sleep(float seconds)
+{
+	Database db; char err[1];
+	float timeouttime = GetEngineTime() + seconds;
+	while (GetEngineTime() < timeouttime)
+	{
+		// we want to do something that takes time here to be friendly on the CPU
+		db = SQL_Connect("default", false, err, sizeof(err));
+		if (db != null)
+			delete db;
+	}
+}
+
+public void OnHibernateWhenEmptyChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+	if (!s_Settings.IsValid)
+		return;
+		
+	if (s_RenableHibernateWhenEmpty)
+		return;
+	
+	bool hibernate = s_Settings.GetBool("tokenstash_hibernate", false);
+	if (view_as<bool>(StringToInt(newValue)) == hibernate)
+		return;
+	
+	s_HibernateWhenEmpty.BoolValue = hibernate;
+}
+
+public Action OnValidateTokenRequired(Handle timer, any async)
 {
 	char[] url = "http://api.tokenstash.com/gslt_getservertoken.php";
 	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, url);
@@ -35,22 +70,23 @@ public Action OnValidateTokenRequired(Handle timer)
 	{
 		OpenLog();
 		TS_LogMessage("******************************************************************");
-		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.09");
+		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.10");
 		TS_LogMessage("******************************************************************");
 		TS_LogMessage("*** SteamWorks is unable to create HTTP request.");
 		CloseLog();
 		return Plugin_Continue;
 	}
 	
+	if (async) LoadSettings();
 	char steamid[32]; char apikey[64]; char serverkey[64];
-	LoadSettings();
 	GetConfigValues(steamid, sizeof(steamid), apikey, sizeof(apikey), serverkey, sizeof(serverkey));
 	
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "version", "0.09");
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamid", steamid);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "apikey", apikey);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "serverkey", serverkey);
-	SteamWorks_SetHTTPCallbacks(request, OnInfoReceived);
+	if (view_as<bool>(async))
+		SteamWorks_SetHTTPCallbacks(request, OnInfoReceived);
 	SteamWorks_PrioritizeHTTPRequest(request);
 	
 	for (int i = 0; i < 5; i++)
@@ -66,12 +102,34 @@ public Action OnValidateTokenRequired(Handle timer)
 	OpenLog();
 	PrintToServer("*** tokenstash.com: Validating server token via HTTP...");
 	TS_LogMessage("******************************************************************");
-	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.09");
+	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.10");
 	TS_LogMessage("******************************************************************");
 	TS_LogMessage("*** -> tokenstash_steamid:\t'%s'", steamid);
 	TS_LogMessage("*** -> tokenstash_apikey:\t'%s'", apikey);
 	TS_LogMessage("*** -> tokenstash_serverkey:\t'%s'", serverkey);
 	SteamWorks_SendHTTPRequest(request);
+	
+	if (view_as<bool>(async))
+		return Plugin_Continue;
+	
+	Database db; char err[1];
+	float timeouttime = GetEngineTime() + 8.0; int responsesize = 0;
+	while (GetEngineTime() < timeouttime)
+	{
+		// we want to do something that takes time here to be friendly on the CPU
+		db = SQL_Connect("default", false, err, sizeof(err));
+		if (db != null)
+			delete db;
+		
+		SteamWorks_GetHTTPResponseBodySize(request, responsesize);
+		if (responsesize > 0)
+		{
+			OnInfoReceived(request, false, true, k_EHTTPStatusCode200OK)
+			return Plugin_Continue;
+		}
+	}
+	
+	OnInfoReceived(request, true, false, k_EHTTPStatusCode5xxUnknown);
 	return Plugin_Continue;
 }
 
@@ -129,17 +187,18 @@ stock void ValidateToken(char[] token)
 			PrintToServer("*** tokenstash.com: Current token is valid.");
 			TS_LogMessage("*** -> tokenstash_token:\t'%s'", configtoken);
 			TS_LogMessage("*** CURRENT GSLT TOKEN IS VALID");
-			return;
 		}
-		
-		WriteToken(token[13]);
-		
-		for (int i = 0; i < 10; i++)
-			token[i] = 88;
+		else
+		{		
+			WriteToken(token[13]);
+			
+			for (int i = 0; i < 10; i++)
+				token[i] = 88;
 
-		PrintToServer("*** tokenstash.com: Token updated to '%s'.", token[13]);
-		TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'", token[13]);
-		RestartServer();
+			PrintToServer("*** tokenstash.com: Token updated to '%s'.", token[13]);
+			TS_LogMessage("*** GSLT TOKEN UPDATED TO '%s'", token[13]);
+			RestartServer();
+		}
 	}
 	
 	else if (StrContains(token, "SERVER_KEY ") == 0)
@@ -155,6 +214,12 @@ stock void ValidateToken(char[] token)
 	else
 	{
 		TS_LogMessage("*** ERROR DETECTED!");
+	}
+	
+	if (s_RenableHibernateWhenEmpty)
+	{
+		s_HibernateWhenEmpty.BoolValue = true;
+		s_RenableHibernateWhenEmpty = false;
 	}
 }
 
@@ -201,6 +266,8 @@ stock bool WriteToken(char[] token)
 
 public void RestartServer()
 {
+	PrintToServer("*** tokenstash.com: Server restarting!");
+	PrintToChatAll("> [tokenstash.com] \x05Server is restarting.");
 	for (int client = 1; client < MaxClients; client++)
 	{
 		if (!IsClientInGame(client))
@@ -209,11 +276,8 @@ public void RestartServer()
 		if (IsFakeClient(client))
 			continue;
 			
-		KickClientEx(client, "Server is restarting...");
+		KickClientEx(client, "Server is restarting...\r\nThis servers GSLT Token has been updated by tokenstash.com.");
 	}
-	
-	PrintToServer("Server restarting!");
-	PrintToChatAll("> \x05Server is restarting.");
 	ServerCommand("quit");
 }
 

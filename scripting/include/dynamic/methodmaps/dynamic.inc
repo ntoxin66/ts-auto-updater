@@ -21,15 +21,20 @@ methodmap Dynamic
 {
 #if defined dynamic_persistent
 	public Dynamic(int blocksize=64, int startsize=0, bool persistent=true)
-	{
-		return Dynamic_Initialise(blocksize, startsize, persistent);
-	}
 #else
 	public Dynamic(int blocksize=64, int startsize=0, bool persistent=false)
 	{
 		return Dynamic_Initialise(blocksize, startsize, persistent);
 	}
 #endif
+	
+	public static bool IsLoaded()
+	{
+		if (GetFeatureStatus(FeatureType_Native, "Native_Dynamic_Initialise") == FeatureStatus_Available)
+			return true;
+		else
+			return false;
+	}
 	
 	property int IsValid
 	{
@@ -265,48 +270,6 @@ methodmap Dynamic
 		return Dynamic_CompareString(this, membername, value, casesensitive);
 	}
 	
-	#pragma deprecated Use .GetDynamic() instead
-	public Dynamic GetObject(const char[] membername)
-	{
-		return Dynamic_GetDynamic(this, membername);
-	}
-	
-	#pragma deprecated Use .SetDynamic() instead
-	public DynamicOffset SetObject(const char[] membername, Dynamic value)
-	{
-		return Dynamic_SetDynamic(this, membername, value);
-	}
-	
-	#pragma deprecated Use .SetDynamicByOffset() instead
-	public Dynamic GetObjectByOffset(DynamicOffset offset)
-	{
-		return Dynamic_GetDynamicByOffset(this, offset);
-	}
-	
-	#pragma deprecated Use .SetDynamicByOffset() instead
-	public void SetObjectByOffset(DynamicOffset offset, Dynamic value)
-	{
-		Dynamic_SetDynamicByOffset(this, offset, value);
-	}
-	
-	#pragma deprecated Use .PushDynamic() instead
-	public int PushObject(Dynamic value, const char[] name="")
-	{
-		return Dynamic_PushDynamic(this, value, name);
-	}
-	
-	#pragma deprecated Use .GetDynamicByIndex() instead
-	public Dynamic GetObjectByIndex(int index)
-	{
-		return Dynamic_GetDynamicByIndex(this, index);
-	}
-	
-	#pragma deprecated Use .SetDynamicByIndex() instead
-	public bool SetObjectByIndex(int index, Dynamic value)
-	{
-		return Dynamic_SetDynamicByIndex(this, index, value);
-	}
-	
 	public Dynamic GetDynamic(const char[] membername)
 	{
 		return Dynamic_GetDynamic(this, membername);
@@ -402,6 +365,36 @@ methodmap Dynamic
 		return Dynamic_GetVectorByIndex(this, index, value);
 	}
 	
+	public Function GetFunction(const char[] membername)
+	{
+		return Dynamic_GetFunction(this, membername);
+	}
+	
+	public DynamicOffset SetFunction(const char[] membername, Function value)
+	{
+		return Dynamic_SetFunction(this, membername, value);
+	}
+	
+	public Function GetFunctionByOffset(DynamicOffset offset)
+	{
+		return Dynamic_GetFunctionByOffset(this, offset);
+	}
+	
+	public void SetFunctionByOffset(DynamicOffset offset, Function value)
+	{
+		Dynamic_SetFunctionByOffset(this, offset, value);
+	}
+	
+	public int PushFunction(Function value, const char[] name="")
+	{
+		return Dynamic_PushFunction(this, value, name);
+	}
+	
+	public Function GetFunctionByIndex(int index)
+	{
+		return Dynamic_GetFunctionByIndex(this, index);
+	}
+	
 	public void HookChanges(Dynamic_HookType callback)
 	{
 		Dynamic_HookChanges(this, callback);	
@@ -450,5 +443,21 @@ methodmap Dynamic
 	public ArrayList FindByMemberValue(Dynamic params)
 	{
 		return Dynamic_FindByMemberValue(this, params);
+	}
+	
+	public void CloseHandleByOffset(DynamicOffset offset)
+	{
+		Handle handle = this.GetHandleByOffset(offset);
+		delete handle;
+		this.SetHandleByOffset(offset, null);
+	}
+	
+	public void CloseHandle(const char[] membername)
+	{
+		DynamicOffset offset = this.GetMemberOffset(membername);
+		if (offset == INVALID_DYNAMIC_OFFSET)
+			return;
+			
+		this.CloseHandleByOffset(offset);		
 	}
 }
