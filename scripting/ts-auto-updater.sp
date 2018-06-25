@@ -1,9 +1,14 @@
 #include <dynamic>
 #include <steamworks>
+#include <dynamic/methodmaps/ts-auto-updater>
 
+#define VERSION "1.0.0"
 static File s_LogFile = null;
-static Dynamic s_Settings = INVALID_DYNAMIC_OBJECT;
+static Config s_Config = view_as<Config>(INVALID_DYNAMIC_OBJECT);
 static ConVar s_HibernateWhenEmpty = null;
+static ConVar s_HostName = null;
+static ConVar s_HostIP = null;
+static ConVar s_HostPort = null;
 static bool s_RenableHibernateWhenEmpty = false;
 
 public Plugin myinfo =
@@ -11,7 +16,7 @@ public Plugin myinfo =
 	name = "TokenStash Automatic Token Updater",
 	author = "Neuro Toxin - Toxic Gaming",
 	description = "Updates a servers GSLT token using TokenStash API",
-	version = "0.0.10",
+	version = VERSION,
 	url = "http://tokenstash.com/"
 }
 
@@ -20,46 +25,43 @@ public void OnAllPluginsLoaded()
 	s_HibernateWhenEmpty = FindConVar("sv_hibernate_when_empty");
 	s_HibernateWhenEmpty.AddChangeHook(OnHibernateWhenEmptyChanged);
 	
-	s_Settings = Dynamic();
+	s_HostName = FindConVar("hostname");
+	s_HostIP = FindConVar("hostip");
+	s_HostPort = FindConVar("hostport");
+	
+	s_Config = Config();
 	LoadSettings(true);
 	
-	s_HibernateWhenEmpty.BoolValue = s_Settings.GetBool("tokenstash_hibernate");
+	s_HibernateWhenEmpty.BoolValue = s_Config.Hibernate;
 	if (s_HibernateWhenEmpty.BoolValue)
 	{
 		s_RenableHibernateWhenEmpty = true;
 		s_HibernateWhenEmpty.BoolValue = false;
 	}
 	
-	CreateTimer(0.01, OnValidateTokenRequired, false);
-	CreateTimer(300.0, OnValidateTokenRequired, true, TIMER_REPEAT);
+	CreateTimer(0.01, OnValidateTokenRequired, s_Config.OnStartAsync);
+	CreateTimer(60.0, OnValidateTokenRequired, true, TIMER_REPEAT);
 }
 
 stock void Sleep(float seconds)
 {
-	Database db; char err[1];
-	float timeouttime = GetEngineTime() + seconds;
-	while (GetEngineTime() < timeouttime)
-	{
-		// we want to do something that takes time here to be friendly on the CPU
-		db = SQL_Connect("default", false, err, sizeof(err));
-		if (db != null)
-			delete db;
-	}
+	static float sleependtime;
+	sleependtime = GetEngineTime() + seconds;
+	while (GetEngineTime() < sleependtime) {}
 }
 
 public void OnHibernateWhenEmptyChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
-	if (!s_Settings.IsValid)
+	if (!s_Config.IsValid)
 		return;
 		
 	if (s_RenableHibernateWhenEmpty)
 		return;
 	
-	bool hibernate = s_Settings.GetBool("tokenstash_hibernate", false);
-	if (view_as<bool>(StringToInt(newValue)) == hibernate)
+	if (view_as<bool>(StringToInt(newValue)) == s_Config.Hibernate)
 		return;
 	
-	s_HibernateWhenEmpty.BoolValue = hibernate;
+	s_HibernateWhenEmpty.BoolValue = s_Config.Hibernate;
 }
 
 public Action OnValidateTokenRequired(Handle timer, any async)
@@ -70,7 +72,7 @@ public Action OnValidateTokenRequired(Handle timer, any async)
 	{
 		OpenLog();
 		TS_LogMessage("******************************************************************");
-		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.10");
+		TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V?", VERSION);
 		TS_LogMessage("******************************************************************");
 		TS_LogMessage("*** SteamWorks is unable to create HTTP request.");
 		CloseLog();
@@ -78,13 +80,18 @@ public Action OnValidateTokenRequired(Handle timer, any async)
 	}
 	
 	if (async) LoadSettings();
-	char steamid[32]; char apikey[64]; char serverkey[64];
+	char steamid[32]; char apikey[64]; char serverkey[64]; char hostname[64]; char endpoint[32];
 	GetConfigValues(steamid, sizeof(steamid), apikey, sizeof(apikey), serverkey, sizeof(serverkey));
+	
+	s_HostName.GetString(hostname, sizeof(hostname));
+	GetServerEndPoint(endpoint, sizeof(endpoint));
 	
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "version", "0.09");
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamid", steamid);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "apikey", apikey);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "serverkey", serverkey);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "hostname", hostname);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "endpoint", endpoint);
 	if (view_as<bool>(async))
 		SteamWorks_SetHTTPCallbacks(request, OnInfoReceived);
 	SteamWorks_PrioritizeHTTPRequest(request);
@@ -96,13 +103,11 @@ public Action OnValidateTokenRequired(Handle timer, any async)
 	}
 	for (int i = 0; i < 10; i++)
 		apikey[i] = 'X';
-	for (int i = 0; i < 10; i++)
-		serverkey[i] = 'X';
 	
 	OpenLog();
 	PrintToServer("*** tokenstash.com: Validating server token via HTTP...");
 	TS_LogMessage("******************************************************************");
-	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V0.10");
+	TS_LogMessage("*** TOKENSTASH.COM AUTO UPDATER V?", VERSION);
 	TS_LogMessage("******************************************************************");
 	TS_LogMessage("*** -> tokenstash_steamid:\t'%s'", steamid);
 	TS_LogMessage("*** -> tokenstash_apikey:\t'%s'", apikey);
@@ -112,14 +117,12 @@ public Action OnValidateTokenRequired(Handle timer, any async)
 	if (view_as<bool>(async))
 		return Plugin_Continue;
 	
-	Database db; char err[1];
-	float timeouttime = GetEngineTime() + 8.0; int responsesize = 0;
+	// This is a hack for a threaded http request
+	float timeouttime = GetEngineTime() + s_Config.RequestTimeout; int responsesize = 0;
 	while (GetEngineTime() < timeouttime)
 	{
 		// we want to do something that takes time here to be friendly on the CPU
-		db = SQL_Connect("default", false, err, sizeof(err));
-		if (db != null)
-			delete db;
+		Sleep(s_Config.RequestSleep);
 		
 		SteamWorks_GetHTTPResponseBodySize(request, responsesize);
 		if (responsesize > 0)
@@ -203,7 +206,7 @@ stock void ValidateToken(char[] token)
 	
 	else if (StrContains(token, "SERVER_KEY ") == 0)
 	{
-		s_Settings.SetString("tokenstash_serverkey", token[11]);
+		s_Config.SetServerKey(token[11]);
 		SaveSettings();
 		
 		PrintToServer("*** tokenstash.com: Server token key updated to '%s'.", token[11]);
@@ -225,8 +228,7 @@ stock void ValidateToken(char[] token)
 
 stock bool LoadSettings(bool settoken=false)
 {
-	s_Settings.Reset();
-	if (!s_Settings.ReadConfig("cfg\\sourcemod\\tokenstash.cfg"))
+	if (!s_Config.ReadConfig("cfg\\sourcemod\\tokenstash.cfg"))
 	{
 		LogError("Unable to read config `cfg\\sourcemod\\tokenstash.cfg`");
 		return false;
@@ -243,32 +245,32 @@ stock bool LoadSettings(bool settoken=false)
 
 stock bool SaveSettings()
 {
-	s_Settings.WriteConfig("cfg\\sourcemod\\tokenstash.cfg");
+	s_Config.WriteConfig("cfg\\sourcemod\\tokenstash.cfg");
 }
 
 stock bool GetConfigValues(char[] steamid, int steamidlength, char[] apikey, int apikeylength, char[] serverkey, int serverkeylength)
 {
-	s_Settings.GetString("tokenstash_steamid", steamid, steamidlength);
-	s_Settings.GetString("tokenstash_apikey", apikey, apikeylength);
-	s_Settings.GetString("tokenstash_serverkey", serverkey, serverkeylength);
+	s_Config.GetSteamID(steamid, steamidlength);
+	s_Config.GetAPIKey(apikey, apikeylength);
+	s_Config.GetServerKey(serverkey, serverkeylength);
 }
 
 stock bool GetToken(char[] token, int length)
 {
-	return s_Settings.GetString("tokenstash_token", token, length);
+	return s_Config.GetToken(token, length);
 }
 
 stock bool WriteToken(char[] token)
 {
-	s_Settings.SetString("tokenstash_token", token, 128);
+	s_Config.SetToken(token);
 	SaveSettings();
 }
 
 public void RestartServer()
 {
 	PrintToServer("*** tokenstash.com: Server restarting!");
-	PrintToChatAll("> [tokenstash.com] \x05Server is restarting.");
-	for (int client = 1; client < MaxClients; client++)
+	PrintToChatAll("> [tokenstash.com] \x05Server is restarting...");
+	for (int client = 1; client <= MaxClients; client++)
 	{
 		if (!IsClientInGame(client))
 			continue;
@@ -279,6 +281,19 @@ public void RestartServer()
 		KickClientEx(client, "Server is restarting...\r\nThis servers GSLT Token has been updated by tokenstash.com.");
 	}
 	ServerCommand("quit");
+}
+
+stock void GetServerEndPoint(char[] buffer, int length)
+{
+	int longip = s_HostIP.IntValue;
+	int pieces[4];
+	
+	pieces[0] = (longip >> 24) & 0x000000FF;
+	pieces[1] = (longip >> 16) & 0x000000FF;
+	pieces[2] = (longip >> 8) & 0x000000FF;
+	pieces[3] = longip & 0x000000FF;
+
+	Format(buffer, length, "%d.%d.%d.%d:%d", pieces[0], pieces[1], pieces[2], pieces[3], s_HostPort.IntValue);
 }
 
 stock void TS_LogMessage(const char[] message, any ...)
