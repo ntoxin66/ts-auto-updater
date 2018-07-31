@@ -34,6 +34,7 @@ methodmap Config < Dynamic
 		myclass.SetFloat("tokenstash_requesttimeout", 5.0000000);
 		myclass.SetFloat("tokenstash_requestsleep", 0.10000000);
 		myclass.SetBool("tokenstash_onstart_async", false);
+		myclass.SetString("tokenstash_restartcommand", "_restart", 128);
 		return view_as<Config>(myclass);
 	}
 	
@@ -44,7 +45,7 @@ methodmap Config < Dynamic
 		{
 			offset = this.GetMemberOffset("tokenstash_apikey");
 			if (offset == INVALID_DYNAMIC_OFFSET)
-				SetFailState("A serious error occured in Dynamic!");
+				SetFailState("A serious error occured in Dynamic methodmap @ Config.GetAPIKey!");
 		}
 		this.GetStringByOffset(offset, buffer, length);
 		return true;
@@ -72,7 +73,7 @@ methodmap Config < Dynamic
 		{
 			offset = this.GetMemberOffset("tokenstash_steamid");
 			if (offset == INVALID_DYNAMIC_OFFSET)
-				SetFailState("A serious error occured in Dynamic!");
+				SetFailState("A serious error occured in Dynamic methodmap @ Config.GetSteamID!");
 		}
 		this.GetStringByOffset(offset, buffer, length);
 		return true;
@@ -100,7 +101,7 @@ methodmap Config < Dynamic
 		{
 			offset = this.GetMemberOffset("tokenstash_serverkey");
 			if (offset == INVALID_DYNAMIC_OFFSET)
-				SetFailState("A serious error occured in Dynamic!");
+				SetFailState("A serious error occured in Dynamic methodmap @ Config.GetServerKey!");
 		}
 		this.GetStringByOffset(offset, buffer, length);
 		return true;
@@ -128,7 +129,7 @@ methodmap Config < Dynamic
 		{
 			offset = this.GetMemberOffset("tokenstash_token");
 			if (offset == INVALID_DYNAMIC_OFFSET)
-				SetFailState("A serious error occured in Dynamic!");
+				SetFailState("A serious error occured in Dynamic methodmap @ Config.GetToken!");
 		}
 		this.GetStringByOffset(offset, buffer, length);
 		return true;
@@ -158,7 +159,7 @@ methodmap Config < Dynamic
 			{
 				offset = this.GetMemberOffset("tokenstash_hibernate");
 				if (offset == INVALID_DYNAMIC_OFFSET)
-					SetFailState("A serious error occured in Dynamic!");
+					SetFailState("A serious error occured in Dynamic methodmap @ Config.Hibernate!");
 			}
 			return this.GetBoolByOffset(offset);
 		}
@@ -187,7 +188,7 @@ methodmap Config < Dynamic
 			{
 				offset = this.GetMemberOffset("tokenstash_requesttimeout");
 				if (offset == INVALID_DYNAMIC_OFFSET)
-					SetFailState("A serious error occured in Dynamic!");
+					SetFailState("A serious error occured in Dynamic methodmap @ Config.RequestTimeout!");
 			}
 			return this.GetFloatByOffset(offset);
 		}
@@ -216,7 +217,7 @@ methodmap Config < Dynamic
 			{
 				offset = this.GetMemberOffset("tokenstash_requestsleep");
 				if (offset == INVALID_DYNAMIC_OFFSET)
-					SetFailState("A serious error occured in Dynamic 2!");
+					SetFailState("A serious error occured in Dynamic methodmap @ Config.RequestSleep!");
 			}
 			return this.GetFloatByOffset(offset);
 		}
@@ -245,7 +246,7 @@ methodmap Config < Dynamic
 			{
 				offset = this.GetMemberOffset("tokenstash_onstart_async");
 				if (offset == INVALID_DYNAMIC_OFFSET)
-					SetFailState("A serious error occured in Dynamic 1!");
+					SetFailState("A serious error occured in Dynamic methodmap @ Config.OnStartAsync!");
 			}
 			return this.GetBoolByOffset(offset);
 		}
@@ -263,5 +264,33 @@ methodmap Config < Dynamic
 			}
 			this.SetBoolByOffset(offset, value);
 		}
+	}
+	
+	public bool GetRestartCommand(char[] buffer, int length)
+	{
+		static DynamicOffset offset = INVALID_DYNAMIC_OFFSET;
+		if (offset == INVALID_DYNAMIC_OFFSET)
+		{
+			offset = this.GetMemberOffset("tokenstash_restartcommand");
+			if (offset == INVALID_DYNAMIC_OFFSET)
+				SetFailState("A serious error occured in Dynamic methodmap @ Config.GetRestartCommand!");
+		}
+		this.GetStringByOffset(offset, buffer, length);
+		return true;
+	}
+	
+	public void SetRestartCommand(const char[] buffer)
+	{
+		static DynamicOffset offset = INVALID_DYNAMIC_OFFSET;
+		if (offset == INVALID_DYNAMIC_OFFSET)
+		{
+			offset = this.GetMemberOffset("tokenstash_restartcommand");
+			if (offset == INVALID_DYNAMIC_OFFSET)
+			{
+				offset = this.SetString("tokenstash_restartcommand", buffer);
+				return;
+			}
+		}
+		this.SetStringByOffset(offset, buffer);
 	}
 }

@@ -20,7 +20,7 @@
 #include <steamworks>
 #include <dynamic/methodmaps/ts-auto-updater>
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
 static File s_LogFile = null;
 static Config s_Config = view_as<Config>(INVALID_DYNAMIC_OBJECT);
 static ConVar s_HibernateWhenEmpty = null;
@@ -180,21 +180,18 @@ stock void ValidateToken(char[] token)
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'ERROR'");
 	}
-	
 	else if (StrEqual(token, "INVALID_AUTH"))
 	{
 		PrintToServer("*** tokenstash.com: Unable to retrieve token.");
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'INVALID_AUTH'");
 	}
-	
 	else if (StrEqual(token, "NO_TOKEN"))
 	{
 		PrintToServer("*** tokenstash.com: Unable to retrieve token.");
 		TS_LogMessage("*** Unable to retrieve token.");
 		TS_LogMessage("*** -> API MSG: 'NO_TOKEN'");
 	}
-	
 	else if (StrContains(token, "SERVER_TOKEN ") == 0)
 	{
 		char configtoken[128];
@@ -221,7 +218,6 @@ stock void ValidateToken(char[] token)
 			RestartServer();
 		}
 	}
-	
 	else if (StrContains(token, "SERVER_KEY ") == 0)
 	{
 		s_Config.SetServerKey(token[11]);
@@ -231,7 +227,6 @@ stock void ValidateToken(char[] token)
 		TS_LogMessage("*** SERVER KEY UPDATED TO '%s'", token[11]);
 		RestartServer();
 	}
-	
 	else
 	{
 		TS_LogMessage("*** ERROR DETECTED!");
@@ -298,7 +293,10 @@ public void RestartServer()
 			
 		KickClientEx(client, "Server is restarting...\r\nThis servers GSLT Token has been updated by tokenstash.com.");
 	}
-	ServerCommand("quit");
+	
+	char restartcommand[128];
+	s_Config.GetRestartCommand(restartcommand, sizeof(restartcommand));
+	ServerCommand(restartcommand);
 }
 
 stock void GetServerEndPoint(char[] buffer, int length)
@@ -310,7 +308,7 @@ stock void GetServerEndPoint(char[] buffer, int length)
 	pieces[1] = (longip >> 16) & 0x000000FF;
 	pieces[2] = (longip >> 8) & 0x000000FF;
 	pieces[3] = longip & 0x000000FF;
-
+	
 	Format(buffer, length, "%d.%d.%d.%d:%d", pieces[0], pieces[1], pieces[2], pieces[3], s_HostPort.IntValue);
 }
 
