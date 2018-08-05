@@ -34,7 +34,7 @@ methodmap Config < Dynamic
 		myclass.SetFloat("tokenstash_requesttimeout", 5.0000000);
 		myclass.SetFloat("tokenstash_requestsleep", 0.10000000);
 		myclass.SetBool("tokenstash_onstart_async", false);
-		myclass.SetString("tokenstash_restartcommand", "_restart", 128);
+		myclass.SetString("tokenstash_restartcommand", "quit", 128);
 		return view_as<Config>(myclass);
 	}
 	
